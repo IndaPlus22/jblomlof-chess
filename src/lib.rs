@@ -37,6 +37,8 @@ pub struct Game {
     state: GameState,
     colour_of_piece: [u64; 2], //white 0-index and black 1-index
     pieces: [u64; 6],
+}
+    
     /*piece_pos : [u8 ; 32], /*
     Each piece will be stored in a u8 call it n, that gives the resulting int. of n/8 the file.
     And n % 8 the rank that the piece is on.
@@ -48,8 +50,8 @@ pub struct Game {
                        // kings, queens, rook, bishops and knights. Pawns can never reach rank 1 (if they are white)
                        // and never reach rank 8 if they are black, thus i can store their alive value in themselves.
                         // a 1 is dead. Same order as piece_pos, except pawns are not in it.
-                        This is definatly not the way to implement this.*/
-}
+This is definatly not the way to implement this.*/
+//}
 
 impl Game {
     /// Initialises a new board with pieces.
@@ -83,7 +85,8 @@ impl Game {
     ///
     /// (optional) Don't forget to include en passent and castling.
     pub fn get_possible_moves(&self, _postion: &str) -> Option<Vec<String>> {
-        None
+        let piece_type : Piece;
+        if ()
     }
 
     /*This function looks if the pieces are different colours. Returning false if that's the case. */
@@ -94,53 +97,112 @@ impl Game {
         _from_rank: u32,
         _to_file: u32,
         _to_rank: u32,
-    ) -> bool {
-        // if not in possible moves.
+    ) -> (bool, bool) { // I need to tell if its not valid, or if its valid aswell aswell if next move will be invalid.
+        // the first bool means the current move is valid or not
+        // the second one implies the next move will not be valid.
+        //eg. true,true means keep coming, true false means this move but no more false,.. means stop.
         match _moving_piece_type {
             Piece::King => {
                 if (_from_file.abs_diff(_to_file) > 1) //somehow i need parenthese or it crys.
             | (_from_rank.abs_diff(_to_rank) > 1)
                 {
-                    return false;
+                    return (false,false);
                 }
             }
             Piece::Bishop => {
                 if _from_file.abs_diff(_to_file) != _from_rank.abs_diff(_to_rank) {
-                    return false;
+                    return (false, false);
                 }
             }
             Piece::Rook => {
                 if (_from_file.abs_diff(_to_file) != 0) & (_from_rank.abs_diff(_to_rank) != 0) {
-                    return false;
+                    return (false, false);
                 }
             }
             Piece::Queen => {
                 if ((_from_file.abs_diff(_to_file) != 0) & (_from_rank.abs_diff(_to_rank) != 0)) // rook logic
-            & (_from_file.abs_diff(_to_file) != _from_rank.abs_diff(_to_rank))
+            & (_from_file.abs_diff(_to_file) != _from_rank.abs_diff(_to_rank)) // bishop logic
                 {
-                    return false;
+                    return (false, false);
                 }
             }
             Piece::Knight => {
                 if !((_from_file.abs_diff(_to_file) == 2) & (_from_rank.abs_diff(_to_rank) == 1))
                     & !((_from_file.abs_diff(_to_file) == 1) & (_from_rank.abs_diff(_to_rank) == 2))
                 {
-                    return false;
+                    return (false, false);
                 }
             }
-            Piece::Pawn => (),  // TODO, remember colour matters.
-            _ => (),
+            Piece::Pawn => if self.is_white(_from_file,_from_rank) {
+                if _to_rank >= _from_rank {
+                    return (false, false);
+                } 
+                if _from_rank == 6 {
+                    if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 2)) // this checks for a normal move.
+                    & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
+                    {
+                        return (false, false);
+                    }
+                } else {
+                    if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 1)) //Im sorry for code dupe, but right now i cant figure out a better way to do it without it.
+                    & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
+                    {
+                        return (false, false);
+                    }
+                }
+            } else { //is black
+                //Sorry for even more code dupe, i dont think making a func is the right call.
+                if _to_rank <= _from_rank {
+                    return (false, false);
+                } 
+                if _from_rank == 1 {
+                    if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 2))
+                    & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
+                    {
+                        return (false, false);
+                    }
+                } else {
+                    if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 1))
+                    & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
+                    {
+                        return (false, false);
+                    }
+                }
+            },
+            
         }
-        if self.is_white(_from_file, _from_rank) == self.is_white(_to_file, _to_rank) {
-            return false;
+
+        //time to check if the moving piece will land on a another piece.
+        if self.is_white(_from_file, _from_rank) { // is the moving piece black or white
+           if self.is_white(_to_file, _to_rank) {
+            return (false, false);
+           } else if self.is_black(_to_file, _to_rank) {
+            return (true, false);
+           }
+        } else if self.is_black(_to_file, _to_rank) {
+            return (false, false);
+        } else if self.is_white(_from_file, _from_rank) {
+            return (true,false);
         }
-        true
+
+        (true, true)
+
     }
 
-    fn is_white(&self, file_coord: u32, rank_coord: u32) -> bool {
-        // dont know if to have is_black aswell, depends on how sure the input is.
+    fn transform_input(input_pos :&str) -> (u32, u32) {
+        let mut chars_iter = input_pos.chars();
+        (chars_iter.next().unwrap().to_digit(17).unwrap() - 10
+        , chars_iter.next().unwrap().to_digit(10).unwrap() - 1)
+    }
+
+    fn is_white(&self, file_coord: u32, rank_coord: u32) -> bool { //simply compare the bits in colour_of_pieces
         let bit_coord: u64 = 2_u64.pow(file_coord * 8 + rank_coord);
         self.colour_of_piece[0/*Colour::White*/] & bit_coord == bit_coord
+    }
+
+    fn is_black(&self, file_coord: u32, rank_coord: u32) -> bool { // I need this to check if black piece moves to black piece
+        let bit_coord: u64 = 2_u64.pow(file_coord * 8 + rank_coord);
+        self.colour_of_piece[1/*Colour::Black*/] & bit_coord == bit_coord
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt};
+use std::{f32::consts::PI, fmt, vec};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 
@@ -85,22 +85,66 @@ impl Game {
     ///
     /// (optional) Don't forget to include en passent and castling.
     pub fn get_possible_moves(&self, _postion: &str) -> Option<Vec<String>> {
-        let piece_type : Piece;
-        if ()
+        let (file_coord, rank_coord) : (u32, u32) = self.transform_input(_postion);
+        let bit_pos = 2_u64.pow(file_coord * 8 + rank_coord);
+        if self.is_black(file_coord, rank_coord) | self.is_white(file_coord, rank_coord){
+            let mut possible_moves_to_return : Vec<String> = vec![];
+            let piece_type : Piece = self.get_that_piece_type(bit_pos);
+            let (mut valid_move_result, mut next_move_legal) : (bool, bool);
+            if file_coord > 0 { //rook move to the left, aka from B2 to A2 or smth
+                possible_moves_to_return.extend_from_slice(self.loop_through());
+                /*let mut loop_counter = 1_u32;
+                loop {
+                    (valid_move_result, next_move_legal) = self.is_valid_move(&piece_type, file_coord, rank_coord, file_coord - 1, rank_coord);
+                    if valid_move_result {
+                        possible_moves_to_return.push(self.transform_back(file_coord - 1, rank_coord));
+                    } else{
+                        break;
+                    }
+                    if !next_move_legal {
+                        break;
+                    }
+                    loop_counter += 1;
+                } */
+            }
+        
+        }
+        //throw a exception
+        None
+    }
+
+    fn loop_through(&self){
+
+    }
+    fn get_that_piece_type(&self, _bit_pos : u64) -> Piece{
+        if _bit_pos == _bit_pos & self.pieces[0] {
+            return Piece::Pawn;
+        } else if _bit_pos == _bit_pos & self.pieces[1] {
+            return Piece::Queen;
+        } else if _bit_pos == _bit_pos & self.pieces[2] {
+            return Piece::Rook;
+        } else if _bit_pos == _bit_pos & self.pieces[3] {
+            return Piece::Bishop;
+        } else if _bit_pos == _bit_pos & self.pieces[4] {
+            return Piece::Knight;
+        } else {
+            return Piece::King;
+        }
     }
 
     /*This function looks if the pieces are different colours. Returning false if that's the case. */
     fn is_valid_move(
         &self,
-        _moving_piece_type: Piece,
+        _moving_piece_type: &Piece,
         _from_file: u32,
         _from_rank: u32,
         _to_file: u32,
         _to_rank: u32,
     ) -> (bool, bool) { // I need to tell if its not valid, or if its valid aswell aswell if next move will be invalid.
         // the first bool means the current move is valid or not
-        // the second one implies the next move will not be valid.
-        //eg. true,true means keep coming, true false means this move but no more false,.. means stop.
+        // the second one implies the next move will be valid.
+        //eg. true,true means keep coming, true false means this move but no more false,false means stop.
+        
         match _moving_piece_type {
             Piece::King => {
                 if (_from_file.abs_diff(_to_file) > 1) //somehow i need parenthese or it crys.
@@ -115,7 +159,7 @@ impl Game {
                 }
             }
             Piece::Rook => {
-                if (_from_file.abs_diff(_to_file) != 0) & (_from_rank.abs_diff(_to_rank) != 0) {
+                if !self.is_valid_move_for_rook(_from_file, _from_rank, _to_file, _to_rank) {
                     return (false, false);
                 }
             }
@@ -168,8 +212,7 @@ impl Game {
                         return (false, false);
                     }
                 }
-            },
-            
+            }
         }
 
         //time to check if the moving piece will land on a another piece.
@@ -188,11 +231,20 @@ impl Game {
         (true, true)
 
     }
+    
 
-    fn transform_input(input_pos :&str) -> (u32, u32) {
+    fn is_valid_move_for_rook(&self, _from_file: u32, _from_rank : u32, _to_file : u32, _to_rank : u32) -> bool{
+     (_from_file.abs_diff(_to_file) == 0) | (_from_rank.abs_diff(_to_rank) != 0) 
+    }
+
+    fn transform_input(&self, input_pos :&str) -> (u32, u32) {
         let mut chars_iter = input_pos.chars();
         (chars_iter.next().unwrap().to_digit(17).unwrap() - 10
         , chars_iter.next().unwrap().to_digit(10).unwrap() - 1)
+    }
+
+    fn transform_back(&self, file_input : u32, rank_input : u32) -> String {
+       return ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].get(file_input as usize).expect("Error on file_rank").to_string() + &(rank_input + 1).to_string(); 
     }
 
     fn is_white(&self, file_coord: u32, rank_coord: u32) -> bool { //simply compare the bits in colour_of_pieces

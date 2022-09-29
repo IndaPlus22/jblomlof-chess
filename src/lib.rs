@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt, vec};
+use std::{fmt, vec};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 
@@ -16,19 +16,10 @@ enum Piece {
     King = 5,
 }
 
-/*enum Colour {
-    White = 0,
-    Black = 1,
-}*/
-
 /* IMPORTANT:
  * - Document well!
  * - Write well and clean code!
  */
-
-/*Oh boy now its time to think.
-Since each bit will monitor positions we need to recieve and modify bits by bitwise ops.
-using =& and &*/
 pub struct Game {
     /* save board, active colour, ... */
 
@@ -39,21 +30,11 @@ pub struct Game {
     colour_of_piece: [u64; 2], //white 0-index and black 1-index
     pieces: [u64; 6],
     to_promote_to: u8, // queen 1, rook 2, bishop 3, knight 4,
+    en_passant_at: u8, //will tell which square enpassant is possible e.g if the move is E7->E5 then it'll mark E6 
+                        //I can be smart. I know enpassants are only possible on rank-3(y==2) and rank-6(y==5) thus i can save on memory
+                        //and only use 0-15 as squares and 16+ as not possible.
+                        //this one will count the opposite way, eg 3 will indicate D3 and 11 will indicate D6
 }
-
-/*piece_pos : [u8 ; 32], /*
-    Each piece will be stored in a u8 call it n, that gives the resulting int. of n/8 the file.
-    And n % 8 the rank that the piece is on.
-    16 elements in the array because there is in total 16 pieces.
-    They will be orderd White king - 0 , White queen - 1, White rook - 2and3, White bishop - 4and5,
-    White knight - 6and7, White pawn - 8_till_15, same for black but +16 on index
-    */
-    piece_dead : u16, // each bit represents if a piece is alive. Altough i only need to worry about
-                       // kings, queens, rook, bishops and knights. Pawns can never reach rank 1 (if they are white)
-                       // and never reach rank 8 if they are black, thus i can store their alive value in themselves.
-                        // a 1 is dead. Same order as piece_pos, except pawns are not in it.
-This is definatly not the way to implement this.*/
-//}
 
 impl Game {
     /// Initialises a new board with pieces.
@@ -62,6 +43,7 @@ impl Game {
             /* initialise board, set active colour to white, ... */
             state: GameState::InProgress,
             white_turn: true,
+            en_passant_at: 0,
             to_promote_to: 1,
             colour_of_piece: [
                 {
@@ -96,6 +78,91 @@ impl Game {
         }
     }
 
+    ///Returns a long string of the board.
+    /// It will represent the board with lines.
+    /// Each line will make one rank and go from left to right.
+    /// Black pieces will be represented by lowercase characters and White pieces by uppercase characters
+    /// Each piece will be represented by one character.
+    /// Kings -> K/k
+    /// Queen -> Q/q
+    /// Pawn -> P/p
+    /// Bishop -> B/b
+    /// Knight -> N/n
+    /// Rook -> R/r
+    /// Empty spots will be represented using *
+    /// For example the starting board will be
+    /// "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR"
+    /// Note: \n means newline
+    pub fn get_board(&self) -> String {
+        let mut board_state = String::new();
+        let mut char_append: char;
+        for y in (0..8).rev() {
+            for x in 0..8 {
+                char_append = '*';
+                for (index_of_piece, piece) in self.pieces.iter().enumerate() {
+                    let bit_pos = 2_u64.pow(x as u32 * 8 + y as u32);
+                    if bit_pos & piece == bit_pos {
+                        char_append = match index_of_piece {
+                            0 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'P'
+                                } else {
+                                    'p'
+                                }
+                            }
+                            1 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'Q'
+                                } else {
+                                    'q'
+                                }
+                            }
+                            2 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'R'
+                                } else {
+                                    'r'
+                                }
+                            }
+                            3 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'B'
+                                } else {
+                                    'b'
+                                }
+                            }
+                            4 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'N'
+                                } else {
+                                    'n'
+                                }
+                            }
+                            5 => {
+                                if self.colour_of_piece[0] & bit_pos == bit_pos {
+                                    'K'
+                                } else {
+                                    'k'
+                                }
+                            }
+                            _ => '*',
+                        };
+                        break;
+                    }
+                }
+                board_state.push(char_append);
+            }
+            board_state.push('\n');
+        }
+        board_state.pop();
+        board_state
+    }
+
+    //Returns true if it is white to move. Returns false otherwise meaning its black to move
+    pub fn is_white_turn(&self) -> bool {
+        self.white_turn
+    }
+
     /// If the move is legal it will make the move.
     /// Inputs are the positions, first arg is from square and second arg is to square.
     /// Return true if the move was made.
@@ -118,8 +185,30 @@ impl Game {
             let (to_file, to_rank) = self.transform_input(_to);
             self.do_move(from_file, from_rank, to_file, to_rank);
 
-            if self.is_colour_in_check(true) | self.is_colour_in_check(false) {
+            if (self.colour_in_check_or_mate(true) == 1)
+                | (self.colour_in_check_or_mate(false) == 1)
+            {
                 self.state = GameState::Check;
+            } else if (self.colour_in_check_or_mate(true) == 2)
+                | (self.colour_in_check_or_mate(false) == 2)
+            {
+                self.state = GameState::GameOver;
+            } else {
+                self.state = GameState::InProgress;
+            }
+            self.en_passant_at = 16; // 16 means no enpassant
+
+            //was it a enpassant move coming?
+            let bit_pos = 2_u64.pow(to_file * 8 + to_rank);
+            match self.get_that_piece_type(bit_pos) {
+                Piece::Pawn => if from_rank.abs_diff(to_rank) == 2 {
+                    if from_rank < to_rank { // this means a white pawn was moving. 
+                        self.en_passant_at = from_file as u8;
+                    } else {
+                        self.en_passant_at = from_file as u8 + 8;
+                    }
+                },
+                _ =>(),
             }
             self.white_turn = !self.white_turn;
             return true;
@@ -156,26 +245,97 @@ impl Game {
     }
 
     /// Get the current game state.
+    /// Values avaiable are inProgress, Check, GameOver(which is checkmate right now)
     pub fn get_game_state(&self) -> GameState {
         self.state
     }
 
-    /// Returns true if the specified colour is in check. Otherwise false.
+    /// Returns u32.
+    /// Returns 1 if the specified colour is in check. returns 0 if the specified colour is not in check and returns 2 if the specified colour is in checkmate
     /// Input is boolean, true if the desired colour to see if in check is white. False if the desired colour to see if in check is black.
-    pub fn is_colour_in_check(&self, _is_white: bool) -> bool {
+    pub fn colour_in_check_or_mate(&mut self, _is_white: bool) -> u32 {
+        // returning 0 if not check nor mate, 1 if check, 2 if mate
+        let (x, y) = self.get_king_pos(_is_white);
+        if self.helper_colour_in_check(_is_white, x, y) {
+            // some sort of check
+            if self.no_valid_moves_for_colour(_is_white) {
+                return 2;
+            }
+
+            return 1;
+        }
+        return 0;
+    }
+
+    /// Returns a option<vector> with all the possible valid moves for that piece on a specific tile.
+    /// Return value wrapped in some. If no possible move exist for the piece an empty vector will be returned.
+    /// Input is accepted as the square position eg. "A4" would be the square in the A-file at rank-4.
+    /// If no piece exist on the input square it returns none.
+    ///
+    /// (Not done) (en passent done) (optional) Don't forget to include en passent and castling.
+    pub fn get_possible_moves(&mut self, _postion: &str) -> Option<Vec<String>> {
+        let (file_coord, rank_coord): (u32, u32) = self.transform_input(_postion);
+        let bit_pos = 2_u64.pow(file_coord * 8 + rank_coord);
+        if self.is_black(file_coord, rank_coord) | self.is_white(file_coord, rank_coord) {
+            let mut possible_moves_to_return: Vec<String> = vec![];
+            let piece_type: Piece = self.get_that_piece_type(bit_pos);
+            let is_white = self.is_white(file_coord, rank_coord);
+
+            match piece_type {
+                Piece::King => possible_moves_to_return
+                    .append(&mut self.search_king_moves(is_white, file_coord, rank_coord)),
+                Piece::Rook => possible_moves_to_return
+                    .append(&mut self.search_rook_moves(is_white, file_coord, rank_coord)),
+                Piece::Knight => possible_moves_to_return
+                    .append(&mut self.search_knight_moves(is_white, file_coord, rank_coord)),
+                Piece::Bishop => possible_moves_to_return
+                    .append(&mut self.search_bishop_moves(is_white, file_coord, rank_coord)),
+                Piece::Queen => possible_moves_to_return
+                    .append(&mut self.search_queen_moves(is_white, file_coord, rank_coord)),
+                Piece::Pawn => possible_moves_to_return
+                    .append(&mut self.search_pawn_moves(is_white, file_coord, rank_coord)),
+            };
+            return Some(possible_moves_to_return);
+        }
+        //throw a exception, no piece on that square.
+        None
+    }
+
+    fn no_valid_moves_for_colour(&mut self, _is_white: bool) -> bool {
+        let mut _bit_pos: u64;
+        for _bit_index in 0..64 {
+            _bit_pos = 2_u64.pow(_bit_index);
+            if self.colour_of_piece[if _is_white { 0 } else { 1 }] & _bit_pos == _bit_pos {
+                if self
+                    .get_possible_moves(&self.transform_back(_bit_index / 8, _bit_index % 8))
+                    .unwrap()
+                    .len()
+                    > 0
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn helper_colour_in_check(&self, _is_white: bool, _x: u32, _y: u32) -> bool {
+        self.is_bishop_logic_threat(_is_white, _x, _y)
+            | self.is_rook_logic_threat(_is_white, _x, _y)
+            | self.is_knight_logic_threat(_is_white, _x, _y)
+            | self.is_pawn_logic_threat(_is_white, _x, _y)
+            | self.is_king_logic_threat(_is_white, _x, _y)
+    }
+
+    fn get_king_pos(&self, _is_white: bool) -> (u32, u32) {
         let mut king_index: u32 = 0; // will be iterated throu to find the value.
         let mut bit_pos: u64;
         loop {
             bit_pos = 2_u64.pow(king_index);
-            if self.pieces[5/*Piece::King */] & bit_pos == bit_pos {
+            if self.pieces[5] & bit_pos == bit_pos {
                 if self.colour_of_piece[if _is_white { 0 } else { 1 }] & bit_pos == bit_pos {
                     //found the correct coloured king
-                    let (x, y) = (king_index / 8, king_index % 8);
-                    return self.is_bishop_logic_threat(_is_white, x, y)
-                        | self.is_rook_logic_threat(_is_white, x, y)
-                        | self.is_knight_logic_threat(_is_white, x, y)
-                        | self.is_pawn_logic_threat(_is_white, x, y)
-                        | self.is_king_logic_threat(_is_white, x, y);
+                    return (king_index / 8, king_index % 8);
                 }
             }
             king_index += 1;
@@ -451,7 +611,7 @@ impl Game {
             } else if self.colour_of_piece[if _is_white { 0 } else { 1 }] & _bit_pos == _bit_pos {
                 break;
             }
-        } 
+        }
         for i in (y + 1)..8 {
             // north
             _bit_pos = 2_u64.pow(x * 8 + i);
@@ -483,42 +643,6 @@ impl Game {
         false
     }
 
-    /// Returns a vector with all the possible moves for that piece on a specific tile.
-    /// Return value wrapped in some. If no possible move exist for the piece an empty vector will be returned.
-    /// Input is accepted as the square position eg. "A4" would be the square in the A-file at rank-4.
-    ///
-    /// If a piece is standing on the given tile, return all possible
-    /// new positions of that piece. Don't forget to the rules for check.
-    ///
-    /// (optional) Don't forget to include en passent and castling.
-    pub fn get_possible_moves(&mut self, _postion: &str) -> Option<Vec<String>> {
-        let (file_coord, rank_coord): (u32, u32) = self.transform_input(_postion);
-        let bit_pos = 2_u64.pow(file_coord * 8 + rank_coord);
-        if self.is_black(file_coord, rank_coord) | self.is_white(file_coord, rank_coord) {
-            let mut possible_moves_to_return: Vec<String> = vec![];
-            let piece_type: Piece = self.get_that_piece_type(bit_pos);
-            let is_white = self.is_white(file_coord, rank_coord);
-
-            match piece_type {
-                Piece::King => possible_moves_to_return
-                    .append(&mut self.search_king_moves(is_white, file_coord, rank_coord)),
-                Piece::Rook => possible_moves_to_return
-                    .append(&mut self.search_rook_moves(is_white, file_coord, rank_coord)),
-                Piece::Knight => possible_moves_to_return
-                    .append(&mut self.search_knight_moves(is_white, file_coord, rank_coord)),
-                Piece::Bishop => possible_moves_to_return
-                    .append(&mut self.search_bishop_moves(is_white, file_coord, rank_coord)),
-                Piece::Queen => possible_moves_to_return
-                    .append(&mut self.search_queen_moves(is_white, file_coord, rank_coord)),
-                Piece::Pawn => possible_moves_to_return
-                    .append(&mut self.search_pawn_moves(is_white, file_coord, rank_coord)),
-            };
-            return Some(possible_moves_to_return);
-        }
-        //throw a exception, no piece on that square.
-        Some(vec![String::from("blet")])
-    }
-
     fn would_cause_check(
         &mut self,
         _is_white: bool,
@@ -530,7 +654,8 @@ impl Game {
         let _remember_colours = self.colour_of_piece;
         let _remember_pieces = self.pieces;
         self.do_move(_from_file, _from_rank, _to_file, _to_rank);
-        let will_cause_check = self.is_colour_in_check(_is_white);
+        let (x, y) = self.get_king_pos(_is_white);
+        let will_cause_check = self.helper_colour_in_check(_is_white, x, y);
         self.colour_of_piece = _remember_colours;
         self.pieces = _remember_pieces;
         will_cause_check
@@ -549,6 +674,22 @@ impl Game {
                 *piece &= !_bit_pos_to;
                 break;
             }
+        }
+
+        //look for en_passant
+        if (self.en_passant_at < 16) & (2_u64.pow((self.en_passant_at % 8) as u32 * 8 + if self.en_passant_at < 8 {2} else {5}) & _bit_pos_to == _bit_pos_to) {
+           match self.get_that_piece_type(2_u64.pow(_from_file * 8 + _from_rank)) {
+               
+            Piece::Pawn => if self.is_white(_from_file, _from_rank) { // the attacking piece is white thus kill black
+                self.colour_of_piece[1] &= !2_u64.pow(_to_file * 8 + 4);
+                self.pieces[0] &= !2_u64.pow(_to_file * 8 + 4); // 4 because the pawn always jumps to rank5
+             } else { // kill white
+                self.colour_of_piece[0] &= !2_u64.pow(_to_file * 8 + 3);
+                self.pieces[0] &= !2_u64.pow(_to_file * 8 + 3); //3 since white pawns will get enpassanted on rank 4
+             },
+            _ => (),
+            }
+
         }
 
         let _bit_pos_from = 2_u64.pow(_from_file * 8 + _from_rank);
@@ -574,6 +715,8 @@ impl Game {
                 self.pieces[0] &= !_bit_pos_to;
             }
         }
+
+        
     }
 
     fn search_queen_moves(
@@ -655,6 +798,11 @@ impl Game {
                         ) {
                             pawn_possible_moves
                                 .push(self.transform_back(new_file as u32, new_rank));
+                        }
+                    } else if (self.en_passant_at < 16) & (_bit_pos == _bit_pos & 2_u64.pow((self.en_passant_at as u32 % 8) * 8 + if self.en_passant_at <= 7 {2} else {5})){
+                        if !self.would_cause_check(_is_white, _from_file, _from_rank, new_file as u32, new_rank) {
+                            pawn_possible_moves
+                            .push(self.transform_back(new_file as u32, new_rank));
                         }
                     }
                 } else {
@@ -930,183 +1078,15 @@ impl Game {
         }
     }
 
-    /*  /*This function looks if the pieces are different colours. Returning false if that's the case. */
-        fn is_valid_move(
-            &self,
-            _moving_piece_type: &Piece,
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> (bool, bool) {
-            // I need to tell if its not valid, or if its valid aswell aswell if next move will be invalid.
-            // the first bool means the current move is valid or not
-            // the second one implies the next move will be valid.
-            //eg. true,true means keep coming, true false means this move but no more false,false means stop.
-
-            match _moving_piece_type {
-                Piece::King => {
-                    if (_from_file.abs_diff(_to_file) > 1) //somehow i need parenthese or it crys.
-                | (_from_rank.abs_diff(_to_rank) > 1)
-                    {
-                        return (false, false);
-                    }
-                }
-                Piece::Bishop => {
-                    if !self.is_valid_move_for_bishop(_from_file, _from_rank, _to_file, _to_rank) {
-                        return (false, false);
-                    }
-                }
-                Piece::Rook => {
-                    if !self.is_valid_move_for_rook(_from_file, _from_rank, _to_file, _to_rank) {
-                        return (false, false);
-                    }
-                }
-                Piece::Queen => {
-                    if ((_from_file.abs_diff(_to_file) != 0) & (_from_rank.abs_diff(_to_rank) != 0)) // rook logic
-                & (_from_file.abs_diff(_to_file) != _from_rank.abs_diff(_to_rank))
-                    // bishop logic
-                    {
-                        return (false, false);
-                    }
-                }
-                Piece::Knight => {
-                    if !((_from_file.abs_diff(_to_file) == 2) & (_from_rank.abs_diff(_to_rank) == 1))
-                        & !((_from_file.abs_diff(_to_file) == 1) & (_from_rank.abs_diff(_to_rank) == 2))
-                    {
-                        return (false, false);
-                    }
-                }
-                Piece::Pawn => {
-                    if self.is_white(_from_file, _from_rank) {
-                        if _to_rank >= _from_rank {
-                            return (false, false);
-                        }
-                        if _from_rank == 6 {
-                            if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 2)) // this checks for a normal move.
-                        & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
-                            {
-                                return (false, false);
-                            }
-                        } else {
-                            if ((_from_file.abs_diff(_to_file) != 0) | (_from_rank.abs_diff(_to_rank) > 1)) //Im sorry for code dupe, but right now i cant figure out a better way to do it without it.
-                        & (!self.is_black(_to_file, _to_rank) | (_from_file.abs_diff(_to_file) != 1)| (_from_rank.abs_diff(_to_rank) != 1))
-                            {
-                                return (false, false);
-                            }
-                        }
-                    } else {
-                        //is black
-                        //Sorry for even more code dupe, i dont think making a func is the right call.
-                        if _to_rank <= _from_rank {
-                            return (false, false);
-                        }
-                        if _from_rank == 1 {
-                            if ((_from_file.abs_diff(_to_file) != 0)
-                                | (_from_rank.abs_diff(_to_rank) > 2))
-                                & (!self.is_black(_to_file, _to_rank)
-                                    | (_from_file.abs_diff(_to_file) != 1)
-                                    | (_from_rank.abs_diff(_to_rank) != 1))
-                            {
-                                return (false, false);
-                            }
-                        } else {
-                            if ((_from_file.abs_diff(_to_file) != 0)
-                                | (_from_rank.abs_diff(_to_rank) > 1))
-                                & (!self.is_black(_to_file, _to_rank)
-                                    | (_from_file.abs_diff(_to_file) != 1)
-                                    | (_from_rank.abs_diff(_to_rank) != 1))
-                            {
-                                return (false, false);
-                            }
-                        }
-                    }
-                }
-            }
-
-            //time to check if the moving piece will land on a another piece.
-            if self.is_white(_from_file, _from_rank) {
-                // is the moving piece black or white
-                if self.is_white(_to_file, _to_rank) {
-                    return (false, false);
-                } else if self.is_black(_to_file, _to_rank) {
-                    return (true, false);
-                }
-            } else if self.is_black(_to_file, _to_rank) {
-                return (false, false);
-            } else if self.is_white(_from_file, _from_rank) {
-                return (true, false);
-            }
-
-            (true, true)
-        }
-
-        fn is_valid_move_for_rook(
-            &self,
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> bool {
-            (_from_file.abs_diff(_to_file) == 0) | (_from_rank.abs_diff(_to_rank) != 0)
-        }
-
-        fn is_valid_move_for_bishop(
-            &self,
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> bool {
-            _from_file.abs_diff(_to_file) == _from_rank.abs_diff(_to_rank)
-        }
-
-        fn is_valid_move_for_king(
-            &self,
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> bool {
-            (_from_file.abs_diff(_to_file) <= 1) & (_from_rank.abs_diff(_to_rank) <= 1)
-        }
-
-        fn is_valid_move_for_knight(
-            &self,
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> bool {
-            ((_from_file.abs_diff(_to_file) == 2) & (_from_rank.abs_diff(_to_rank) == 1))
-                | ((_from_file.abs_diff(_to_file) == 1) & (_from_rank.abs_diff(_to_rank) == 2))
-        }
-
-        fn is_valid_move_for_pawn(
-            &self,
-            _colour: u32, //0 for white, 1 for black
-            _from_file: u32,
-            _from_rank: u32,
-            _to_file: u32,
-            _to_rank: u32,
-        ) -> bool {
-            if _colour == 0 {
-                //White piece moving
-                if _to_rank > _from_rank {
-                    if _from_file.abs_diff(_to_file) == 0 {
-                        if _from_rank == 1 {}
-                    } else if _from_file.abs_diff(_to_file) == 1{
-
-                    } else
-                }
-            } else {
-            }
-        }
-    */
     fn transform_input(&self, input_pos: &str) -> (u32, u32) {
         let mut chars_iter = input_pos.chars();
         (
-            chars_iter.next().unwrap().to_digit(17).unwrap() - 10,
+            chars_iter
+                .next()
+                .unwrap()
+                .to_digit(18 /*Any number > 17 works */)
+                .unwrap()
+                - 10,
             chars_iter.next().unwrap().to_digit(10).unwrap() - 1,
         )
     }
@@ -1149,7 +1129,7 @@ impl fmt::Debug for Game {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         /* build board representation string */
         let mut to_debug_print = String::new();
-        let mut char_append: char = '*';
+        let mut char_append: char;
         for y in (0..8).rev() {
             for x in 0..8 {
                 char_append = '*';
@@ -1234,113 +1214,525 @@ mod tests {
     #[test]
     fn game_in_progress_after_init() {
         let game = Game::new();
-        
+
         println!("{game:?}");
-       
 
         assert_eq!(game.get_game_state(), GameState::InProgress);
     }
     #[test]
     fn test_a_game() {
         let mut game = Game::new();
-        assert_eq!(format!("{game:?}"),"rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n");
-        assert_eq!(false, game.is_colour_in_check(true));
-        assert_eq!(false, game.is_colour_in_check(false));
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        assert_eq!(0, game.colour_in_check_or_mate(true));
+        assert_eq!(0, game.colour_in_check_or_mate(false));
 
         game.do_move(3, 0, 3, 7); //do_move works.
-        assert_eq!(format!("{game:?}"),"rnbQkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNB*KBNR\n");
-        assert_eq!(true ,game.is_colour_in_check(false));
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbQkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNB*KBNR\n"
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false));
         game.do_move(0, 7, 3, 0);
-        assert_eq!(true ,game.is_colour_in_check(true));
-        
-        game = Game::new();
-        assert_eq!(format!("{game:?}"),"rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n");
-        assert_eq!(Some(vec![]), game.get_possible_moves("A1"));
+        assert_eq!(1, game.colour_in_check_or_mate(true));
 
+        game = Game::new();
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        assert_eq!(Some(vec![]), game.get_possible_moves("A1"));
     }
 
     #[test]
-    fn test_rook_moving_piece (){
+    fn test_rook_moving_piece() {
         let mut game = Game::new();
-        assert_eq!(format!("{game:?}"),"rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n");
-        game.pieces = [0,0,0,0,0,0]; //setting board empty to test moves.
-        game.colour_of_piece = [0,0];
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        game.pieces = [0, 0, 0, 0, 0, 0]; //setting board empty to test moves.
+        game.colour_of_piece = [0, 0];
 
         //I need to add kings otherwise my is in check function shits itself.
         game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
         game.colour_of_piece[0] = 1;
         game.colour_of_piece[1] = 2_u64.pow(7);
-        assert_eq!(format!("{game:?}"),"k*******\n********\n********\n********\n********\n********\n********\nK*******\n");
-
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
 
         //rook
         game.pieces[2] = 2_u64.pow(3 * 8 + 3); //D4
-        
+
         game.colour_of_piece[0] += 2_u64.pow(3 * 8 + 3); //D4
-        assert_eq!(format!("{game:?}"),"k*******\n********\n********\n********\n***R****\n********\n********\nK*******\n");
-        assert_eq!(Some(vec![String::from("E4"), String::from("F4"), String::from("G4"), String::from("H4"), 
-            String::from("C4"), String::from("B4"), String::from("A4"), 
-            String::from("D5"), String::from("D6"), String::from("D7"), String::from("D8"),
-            String::from("D3"), String::from("D2"), String::from("D1")]), 
-            game.get_possible_moves("D4"));
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n***R****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E4"),
+                String::from("F4"),
+                String::from("G4"),
+                String::from("H4"),
+                String::from("C4"),
+                String::from("B4"),
+                String::from("A4"),
+                String::from("D5"),
+                String::from("D6"),
+                String::from("D7"),
+                String::from("D8"),
+                String::from("D3"),
+                String::from("D2"),
+                String::from("D1")
+            ]),
+            game.get_possible_moves("D4")
+        );
 
         //What if i add an enemy piece to block it?
         game.pieces[0] = 2_u64.pow(3 * 8 + 6);
         game.colour_of_piece[1] += 2_u64.pow(3 * 8 + 6);
-        assert_eq!(format!("{game:?}"),"k*******\n***p****\n********\n********\n***R****\n********\n********\nK*******\n");
-        assert_eq!(Some(vec![String::from("E4"), String::from("F4"), String::from("G4"), String::from("H4"), 
-            String::from("C4"), String::from("B4"), String::from("A4"), 
-            String::from("D5"), String::from("D6"), String::from("D7"), // D8 is removed from possible.
-            String::from("D3"), String::from("D2"), String::from("D1")]), 
-            game.get_possible_moves("D4"));
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n***p****\n********\n********\n***R****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E4"),
+                String::from("F4"),
+                String::from("G4"),
+                String::from("H4"),
+                String::from("C4"),
+                String::from("B4"),
+                String::from("A4"),
+                String::from("D5"),
+                String::from("D6"),
+                String::from("D7"), // D8 is removed from possible.
+                String::from("D3"),
+                String::from("D2"),
+                String::from("D1")
+            ]),
+            game.get_possible_moves("D4")
+        );
 
         //what if is friendly instead of enemy?
         game.colour_of_piece[1] -= 2_u64.pow(3 * 8 + 6);
         game.colour_of_piece[0] += 2_u64.pow(3 * 8 + 6);
-        assert_eq!(format!("{game:?}"),"k*******\n***P****\n********\n********\n***R****\n********\n********\nK*******\n");
-        assert_eq!(Some(vec![String::from("E4"), String::from("F4"), String::from("G4"), String::from("H4"), 
-            String::from("C4"), String::from("B4"), String::from("A4"), 
-            String::from("D5"), String::from("D6"), //D7 is removed from possible....
-            String::from("D3"), String::from("D2"), String::from("D1")]), 
-            game.get_possible_moves("D4"));
-
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n***P****\n********\n********\n***R****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E4"),
+                String::from("F4"),
+                String::from("G4"),
+                String::from("H4"),
+                String::from("C4"),
+                String::from("B4"),
+                String::from("A4"),
+                String::from("D5"),
+                String::from("D6"), //D7 is removed from possible....
+                String::from("D3"),
+                String::from("D2"),
+                String::from("D1")
+            ]),
+            game.get_possible_moves("D4")
+        );
     }
 
     #[test]
-    fn test_bishop_moving_piece (){
+    fn test_bishop_moving_piece() {
         let mut game = Game::new();
-        assert_eq!(format!("{game:?}"),"rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n");
-        game.pieces = [0,0,0,0,0,0]; //setting board empty to test moves.
-        game.colour_of_piece = [0,0];
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        game.pieces = [0, 0, 0, 0, 0, 0]; //setting board empty to test moves.
+        game.colour_of_piece = [0, 0];
 
         //I need to add kings otherwise my is in check function shits itself.
         game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
         game.colour_of_piece[0] = 1;
         game.colour_of_piece[1] = 2_u64.pow(7);
-        assert_eq!(format!("{game:?}"),"k*******\n********\n********\n********\n********\n********\n********\nK*******\n");
-
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
 
         //bishop
         game.pieces[3] = 2_u64.pow(3 * 8 + 3); //D4
-        
+
         game.colour_of_piece[0] += 2_u64.pow(3 * 8 + 3); //D4
-        assert_eq!(format!("{game:?}"),"k*******\n********\n********\n********\n***B****\n********\n********\nK*******\n");
-        assert_eq!(Some(vec![String::from("E5"), String::from("F6"), String::from("G7"), String::from("H8"), 
-            String::from("C5"), String::from("B6"), String::from("A7"), 
-            String::from("E3"), String::from("F2"), String::from("G1"),
-            String::from("C3"), String::from("B2")]), 
-            game.get_possible_moves("D4"));
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n***B****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E5"),
+                String::from("F6"),
+                String::from("G7"),
+                String::from("H8"),
+                String::from("C5"),
+                String::from("B6"),
+                String::from("A7"),
+                String::from("E3"),
+                String::from("F2"),
+                String::from("G1"),
+                String::from("C3"),
+                String::from("B2")
+            ]),
+            game.get_possible_moves("D4")
+        );
+        assert_eq!(0, game.colour_in_check_or_mate(false));
 
         //Lets shift it one step up so we can see how it behaves.
         game.do_move(3, 3, 3, 4);
-        assert_eq!(format!("{game:?}"),"k*******\n********\n********\n***B****\n********\n********\n********\nK*******\n");
-        assert_eq!(Some(vec![String::from("E6"), String::from("F7"), String::from("G8"), 
-            String::from("C6"), String::from("B7"), String::from("A8"), // btw black king on A8 
-            String::from("E4"), String::from("F3"), String::from("G2"), String::from("H1"),
-            String::from("C4"), String::from("B3"), String::from("A2")]), 
-            game.get_possible_moves("D5"));
-        assert_eq!(true, game.is_colour_in_check(false)); // since the king is on A8
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n***B****\n********\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E6"),
+                String::from("F7"),
+                String::from("G8"),
+                String::from("C6"),
+                String::from("B7"),
+                String::from("A8"), // btw black king on A8
+                String::from("E4"),
+                String::from("F3"),
+                String::from("G2"),
+                String::from("H1"),
+                String::from("C4"),
+                String::from("B3"),
+                String::from("A2")
+            ]),
+            game.get_possible_moves("D5")
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false)); // since the king is on A8
 
+        //Lets move the kings such that the are not on the edge
+        //To see if they block movement.
+        game.do_move(0, 0, 1, 2);
+        game.do_move(0, 7, 1, 6);
+        assert_eq!(
+            format!("{game:?}"),
+            "********\n*k******\n********\n***B****\n********\n*K******\n********\n********\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E6"),
+                String::from("F7"),
+                String::from("G8"),
+                String::from("C6"),
+                String::from("B7"), // btw black king on B7 thus A8 not valid move
+                String::from("E4"),
+                String::from("F3"),
+                String::from("G2"),
+                String::from("H1"),
+                String::from("C4")
+            ]),
+            game.get_possible_moves("D5")
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false)); // since the king is on B7
     }
 
+    #[test]
+    fn test_queen_moving_piece() {
+        let mut game = Game::new();
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        game.pieces = [0, 0, 0, 0, 0, 0]; //setting board empty to test moves.
+        game.colour_of_piece = [0, 0];
+
+        //I need to add kings otherwise my is in check function shits itself.
+        game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
+        game.colour_of_piece[0] = 1;
+        game.colour_of_piece[1] = 2_u64.pow(7);
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
+
+        //Queen
+        //no need to do a big test since its basically just rook moves and bishop moves combined.
+        game.pieces[1] = 2_u64.pow(3 * 8 + 3); //D4
+        game.colour_of_piece[0] += 2_u64.pow(3 * 8 + 3); //D4
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n***Q****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("E5"),
+                String::from("F6"),
+                String::from("G7"),
+                String::from("H8"),
+                String::from("C5"),
+                String::from("B6"),
+                String::from("A7"),
+                String::from("E3"),
+                String::from("F2"),
+                String::from("G1"),
+                String::from("C3"),
+                String::from("B2"),
+                String::from("E4"),
+                String::from("F4"),
+                String::from("G4"),
+                String::from("H4"),
+                String::from("C4"),
+                String::from("B4"),
+                String::from("A4"),
+                String::from("D5"),
+                String::from("D6"),
+                String::from("D7"),
+                String::from("D8"),
+                String::from("D3"),
+                String::from("D2"),
+                String::from("D1")
+            ]),
+            game.get_possible_moves("D4")
+        ); //Exactly bishop + rook moves.
+        assert_eq!(0, game.colour_in_check_or_mate(false));
+    }
+
+    #[test]
+    fn test_knight_moving_piece() {
+        let mut game = Game::new();
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+        game.pieces = [0, 0, 0, 0, 0, 0]; //setting board empty to test moves.
+        game.colour_of_piece = [0, 0];
+
+        //I need to add kings otherwise my is in check function shits itself.
+        game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
+        game.colour_of_piece[0] = 1;
+        game.colour_of_piece[1] = 2_u64.pow(7);
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
+
+        //adding a knight to D4
+        game.pieces[4] = 2_u64.pow(3 * 8 + 3); //D4
+        game.colour_of_piece[0] += 2_u64.pow(3 * 8 + 3); //D4
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n***N****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("B3"),
+                String::from("B5"),
+                String::from("C2"),
+                String::from("C6"),
+                String::from("E2"),
+                String::from("E6"),
+                String::from("F3"),
+                String::from("F5"),
+            ]),
+            game.get_possible_moves("d4") //small letters work as input. Altough will always return uppercase
+        );
+        assert_eq!(0, game.colour_in_check_or_mate(false));
+
+        //Lets test if it still works with a piece there.
+        game.do_move(0, 7, 5, 4); // the black king to F5
+        assert_eq!(
+            format!("{game:?}"),
+            "********\n********\n********\n*****k**\n***N****\n********\n********\nK*******\n"
+        );
+        assert_eq!(
+            Some(vec![
+                String::from("B3"),
+                String::from("B5"),
+                String::from("C2"),
+                String::from("C6"),
+                String::from("E2"),
+                String::from("E6"),
+                String::from("F3"),
+                String::from("F5"),
+            ]),
+            game.get_possible_moves("D4")
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false));
+
+        //now put the white king on a tile the knight could jump to.
+        game.do_move(0, 0, 1, 2); //B3
+        assert_eq!(
+            format!("{game:?}"),
+            "********\n********\n********\n*****k**\n***N****\n*K******\n********\n********\n"
+        );
+        assert_eq!(
+            Some(vec![
+                //String::from("B3"), //cant jump to a piece of same colour
+                String::from("B5"),
+                String::from("C2"),
+                String::from("C6"),
+                String::from("E2"),
+                String::from("E6"),
+                String::from("F3"),
+                String::from("F5"),
+            ]),
+            game.get_possible_moves("D4")
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false));
+    }
+
+    #[test]
+    fn test_mate() {
+        let mut game = Game::new();
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+
+        game.do_move(3, 0, 3, 7);
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbQkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNB*KBNR\n"
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false)); // only check since black king can capture white queen.
+        assert_eq!(0, game.colour_in_check_or_mate(true));
+        game.do_move(0, 0, 2, 7);
+        assert_eq!(
+            format!("{game:?}"),
+            "rnRQkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\n*NB*KBNR\n"
+        );
+        assert_eq!(2, game.colour_in_check_or_mate(false)); //mate since rook is defening queen
+        assert_eq!(0, game.colour_in_check_or_mate(true));
+
+        //now repeat for opposite colour
+        game = Game::new();
+        assert_eq!(
+            format!("{game:?}"),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR\n"
+        );
+
+        game.do_move(3, 7, 3, 0);
+        assert_eq!(
+            format!("{game:?}"),
+            "rnb*kbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBqKBNR\n"
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(true)); // only check since black king can capture white queen.
+        assert_eq!(0, game.colour_in_check_or_mate(false));
+        game.do_move(2, 7, 2, 1);
+        assert_eq!(
+            format!("{game:?}"),
+            "rn**kbnr\npppppppp\n********\n********\n********\n********\nPPbPPPPP\nRNBqKBNR\n"
+        );
+        assert_eq!(2, game.colour_in_check_or_mate(true)); //mate since bishop is defening queen
+        assert_eq!(0, game.colour_in_check_or_mate(false));
+    }
+
+    #[test]
+    fn testing_a_real_game_using_only_public_func() {
+        let mut game = Game::new();
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR"
+        );
+        assert_eq!(true, game.make_move("E2", "E4"));
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppppppp\n********\n********\n****P***\n********\nPPPP*PPP\nRNBQKBNR"
+        );
+        assert_eq!(true, game.make_move("E7", "E5"));
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppp*ppp\n********\n****p***\n****P***\n********\nPPPP*PPP\nRNBQKBNR"
+        );
+
+        //trying a move thats illegal
+        assert_eq!(false, game.make_move("D7", "D5")); //its white turn not black
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppp*ppp\n********\n****p***\n****P***\n********\nPPPP*PPP\nRNBQKBNR"
+        );
+        //lets try a white piece doing an illegal move
+        assert_eq!(false, game.make_move("A1", "A3"));
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppp*ppp\n********\n****p***\n****P***\n********\nPPPP*PPP\nRNBQKBNR"
+        );
+
+        //back to real moves.
+        assert_eq!(true, game.make_move("G1", "F3"));
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppp*ppp\n********\n****p***\n****P***\n*****N**\nPPPP*PPP\nRNBQKB*R"
+        );
+        assert_eq!(true, game.make_move("F8", "C5"));
+        assert_eq!(
+            game.get_board(),
+            "rnbqk*nr\npppp*ppp\n********\n**b*p***\n****P***\n*****N**\nPPPP*PPP\nRNBQKB*R"
+        );
+        //and so on.
+        assert_eq!(true, game.make_move("F3", "E5"));
+        assert_eq!(true, game.make_move("D8", "H4"));
+        assert_eq!(true, game.make_move("E5", "D3"));
+        assert_eq!(true, game.make_move("H4", "F2"));
+        assert_eq!(1, game.colour_in_check_or_mate(true));
+        assert_eq!(0, game.colour_in_check_or_mate(false));
+        assert_eq!(game.get_game_state(), GameState::Check);
+        assert_eq!(Some(vec![String::from("F2")]), game.get_possible_moves("D3"));
+        assert_eq!(true, game.make_move("D3", "F2"));
+        assert_eq!(game.get_game_state(), GameState::InProgress);
+
+        assert_eq!(true, game.make_move("E8", "F8"));
+        assert_eq!(true, game.make_move("E4", "E5"));
+        assert_eq!(true, game.make_move("D7", "D5"));
+        assert_eq!(game.en_passant_at, 11);
+        assert_eq!(true, game.make_move("E5", "D6")); // enpassant thus proving it worked.
+        assert_eq!(true, game.make_move("C5", "B4"));
+        assert_eq!(true, game.make_move("D6", "D7"));
+        assert_eq!(true, game.make_move("G8", "H6"));
+        assert_eq!(true, game.make_move("D7", "D8"));
+        assert_eq!(game.get_game_state(), GameState::GameOver);
+        assert_eq!(game.get_board(), "rnbQ*k*r\nppp**ppp\n*******n\n********\n*b******\n********\nPPPP*NPP\nRNBQKB*R");
+        //this shows promotion works. altough not yet shown game.set_promotion()
+
+        //i'll simply show it in another function.
+        
+    }
+
+    #[test]
+    fn test_set_promotion(){
+        let mut game = Game::new();
+        game.pieces = [0,0,0,0,0,0,];
+        game.colour_of_piece = [0,0];
+        game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
+        game.colour_of_piece[0] = 1;
+        game.colour_of_piece[1] = 2_u64.pow(7);
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
+        
+        game.pieces[0] = 2_u64.pow(62); //H7
+        game.colour_of_piece[0] += 2_u64.pow(62);
+        assert_eq!(
+            format!("{game:?}"),
+            "k*******\n*******P\n********\n********\n********\n********\n********\nK*******\n"
+        );
+        game.set_promotion("rook");
+        assert_eq!(game.is_white_turn(), true);
+        assert_eq!(true, game.make_move("H7", "H8"));
+        assert_eq!(
+            format!("{game:?}"),
+            "k******R\n********\n********\n********\n********\n********\n********\nK*******\n"
+        );
+        assert_eq!(1, game.colour_in_check_or_mate(false));
+
+
+    }
 }

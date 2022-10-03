@@ -42,13 +42,13 @@ If the returned value is 1 then the player is in check
 If the returned value is 2 then the player is in mate thus lost.
 
 Game::make_move(from, to) : 
-Will take two (2) &str as input. First one from square and the seconds one to square. Written as "<file><rank>"
+Will take two (2) &str as input. First one from square and the seconds one to square. Written as "fileRank"
 e.g "A4" is a square.
 If its legal and valid for the piece standing on the from square to move to the "to square" it will do so and return true
 otherwise return false and dont do anything.
 
 Game::get_possible_moves(square) : 
-Takes a square in type &str as input in "<file><rank>" returns a vector wrapped in some containing all valid moves. Return None if there was no piece on the input square.
+Takes a square in type &str as input in "fileRank" returns a vector wrapped in some containing all valid moves. Theese moves are strings following the "fileRank" rule. Returns None if there was no piece on the input square.
 
 Game::set_promotion(piece) :
 this sets what type of piece a pawn becomes when promoting. at standard its queen.

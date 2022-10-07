@@ -30,10 +30,10 @@ pub struct Game {
     colour_of_piece: [u64; 2], //white 0-index and black 1-index
     pieces: [u64; 6],
     to_promote_to: u8, // queen 1, rook 2, bishop 3, knight 4,
-    en_passant_at: u8, //will tell which square enpassant is possible e.g if the move is E7->E5 then it'll mark E6 
-                        //I can be smart. I know enpassants are only possible on rank-3(y==2) and rank-6(y==5) thus i can save on memory
-                        //and only use 0-15 as squares and 16+ as not possible.
-                        //this one will count the opposite way, eg 3 will indicate D3 and 11 will indicate D6
+    en_passant_at: u8, //will tell which square enpassant is possible e.g if the move is E7->E5 then it'll mark E6
+                       //I can be smart. I know enpassants are only possible on rank-3(y==2) and rank-6(y==5) thus i can save on memory
+                       //and only use 0-15 as squares and 16+ as not possible.
+                       //this one will count the opposite way, eg 3 will indicate D3 and 11 will indicate D6
 }
 
 impl Game {
@@ -185,14 +185,15 @@ impl Game {
             let (to_file, to_rank) = self.transform_input(_to);
             self.do_move(from_file, from_rank, to_file, to_rank);
 
-            if (self.colour_in_check_or_mate(true) == 1)
-                | (self.colour_in_check_or_mate(false) == 1)
-            {
-                self.state = GameState::Check;
-            } else if (self.colour_in_check_or_mate(true) == 2)
-                | (self.colour_in_check_or_mate(false) == 2)
-            {
+            //Why am i repeating computation task?
+            // I should do
+            let white_check_or_mate = self.colour_in_check_or_mate(true);
+            let black_check_or_mate = self.colour_in_check_or_mate(false);
+
+            if (white_check_or_mate == 2) | (black_check_or_mate == 2) {
                 self.state = GameState::GameOver;
+            } else if (white_check_or_mate == 1) | (black_check_or_mate == 1) {
+                self.state = GameState::Check;
             } else {
                 self.state = GameState::InProgress;
             }
@@ -201,14 +202,17 @@ impl Game {
             //was it a enpassant move coming?
             let bit_pos = 2_u64.pow(to_file * 8 + to_rank);
             match self.get_that_piece_type(bit_pos) {
-                Piece::Pawn => if from_rank.abs_diff(to_rank) == 2 {
-                    if from_rank < to_rank { // this means a white pawn was moving. 
-                        self.en_passant_at = from_file as u8;
-                    } else {
-                        self.en_passant_at = from_file as u8 + 8;
+                Piece::Pawn => {
+                    if from_rank.abs_diff(to_rank) == 2 {
+                        if from_rank < to_rank {
+                            // this means a white pawn was moving.
+                            self.en_passant_at = from_file as u8;
+                        } else {
+                            self.en_passant_at = from_file as u8 + 8;
+                        }
                     }
-                },
-                _ =>(),
+                }
+                _ => (),
             }
             self.white_turn = !self.white_turn;
             return true;
@@ -246,7 +250,18 @@ impl Game {
 
     /// Get the current game state.
     /// Values avaiable are inProgress, Check, GameOver(which is checkmate right now)
-    pub fn get_game_state(&self) -> GameState {
+    pub fn get_game_state(&mut self) -> GameState {
+        //Ugly but hopefully works, i just repeat the check for mate thing.
+        let white_check_or_mate = self.colour_in_check_or_mate(true);
+        let black_check_or_mate = self.colour_in_check_or_mate(false);
+
+        if (white_check_or_mate == 2) | (black_check_or_mate == 2) {
+            self.state = GameState::GameOver;
+        } else if (white_check_or_mate == 1) | (black_check_or_mate == 1) {
+            self.state = GameState::Check;
+        } else {
+            self.state = GameState::InProgress;
+        }
         self.state
     }
 
@@ -677,19 +692,26 @@ impl Game {
         }
 
         //look for en_passant
-        if (self.en_passant_at < 16) & (2_u64.pow((self.en_passant_at % 8) as u32 * 8 + if self.en_passant_at < 8 {2} else {5}) & _bit_pos_to == _bit_pos_to) {
-           match self.get_that_piece_type(2_u64.pow(_from_file * 8 + _from_rank)) {
-               
-            Piece::Pawn => if self.is_white(_from_file, _from_rank) { // the attacking piece is white thus kill black
-                self.colour_of_piece[1] &= !2_u64.pow(_to_file * 8 + 4);
-                self.pieces[0] &= !2_u64.pow(_to_file * 8 + 4); // 4 because the pawn always jumps to rank5
-             } else { // kill white
-                self.colour_of_piece[0] &= !2_u64.pow(_to_file * 8 + 3);
-                self.pieces[0] &= !2_u64.pow(_to_file * 8 + 3); //3 since white pawns will get enpassanted on rank 4
-             },
-            _ => (),
+        if (self.en_passant_at < 16)
+            & (2_u64.pow(
+                (self.en_passant_at % 8) as u32 * 8 + if self.en_passant_at < 8 { 2 } else { 5 },
+            ) & _bit_pos_to
+                == _bit_pos_to)
+        {
+            match self.get_that_piece_type(2_u64.pow(_from_file * 8 + _from_rank)) {
+                Piece::Pawn => {
+                    if self.is_white(_from_file, _from_rank) {
+                        // the attacking piece is white thus kill black
+                        self.colour_of_piece[1] &= !2_u64.pow(_to_file * 8 + 4);
+                        self.pieces[0] &= !2_u64.pow(_to_file * 8 + 4); // 4 because the pawn always jumps to rank5
+                    } else {
+                        // kill white
+                        self.colour_of_piece[0] &= !2_u64.pow(_to_file * 8 + 3);
+                        self.pieces[0] &= !2_u64.pow(_to_file * 8 + 3); //3 since white pawns will get enpassanted on rank 4
+                    }
+                }
+                _ => (),
             }
-
         }
 
         let _bit_pos_from = 2_u64.pow(_from_file * 8 + _from_rank);
@@ -715,8 +737,6 @@ impl Game {
                 self.pieces[0] &= !_bit_pos_to;
             }
         }
-
-        
     }
 
     fn search_queen_moves(
@@ -799,10 +819,23 @@ impl Game {
                             pawn_possible_moves
                                 .push(self.transform_back(new_file as u32, new_rank));
                         }
-                    } else if (self.en_passant_at < 16) & (_bit_pos == _bit_pos & 2_u64.pow((self.en_passant_at as u32 % 8) * 8 + if self.en_passant_at <= 7 {2} else {5})){
-                        if !self.would_cause_check(_is_white, _from_file, _from_rank, new_file as u32, new_rank) {
+                    } else if (self.en_passant_at < 16)
+                        & (_bit_pos
+                            == _bit_pos
+                                & 2_u64.pow(
+                                    (self.en_passant_at as u32 % 8) * 8
+                                        + if self.en_passant_at <= 7 { 2 } else { 5 },
+                                ))
+                    {
+                        if !self.would_cause_check(
+                            _is_white,
+                            _from_file,
+                            _from_rank,
+                            new_file as u32,
+                            new_rank,
+                        ) {
                             pawn_possible_moves
-                            .push(self.transform_back(new_file as u32, new_rank));
+                                .push(self.transform_back(new_file as u32, new_rank));
                         }
                     }
                 } else {
@@ -820,17 +853,18 @@ impl Game {
                     }
                     if (if _is_white { 1 } else { 6 }) == _from_rank {
                         let _temp_bit_pos = 2_u64.pow(new_file as u32 * 8 + new_rank);
-                        let _double_move_new_rank; 
+                        let _double_move_new_rank;
                         if _is_white {
-                            _double_move_new_rank = new_rank+ 1;
+                            _double_move_new_rank = new_rank + 1;
                         } else {
                             _double_move_new_rank = new_rank - 1;
                         };
                         _bit_pos = 2_u64.pow(new_file as u32 * 8 + _double_move_new_rank);
-                        
+
                         if ((self.colour_of_piece[0] | self.colour_of_piece[1]) & _bit_pos
-                            != _bit_pos) & ((self.colour_of_piece[0] | self.colour_of_piece[1]) & _bit_pos
                             != _bit_pos)
+                            & ((self.colour_of_piece[0] | self.colour_of_piece[1]) & _temp_bit_pos
+                                != _temp_bit_pos)
                         {
                             if !self.would_cause_check(
                                 _is_white,
@@ -839,8 +873,9 @@ impl Game {
                                 new_file as u32,
                                 _double_move_new_rank,
                             ) {
-                                pawn_possible_moves
-                                    .push(self.transform_back(new_file as u32, _double_move_new_rank));
+                                pawn_possible_moves.push(
+                                    self.transform_back(new_file as u32, _double_move_new_rank),
+                                );
                             }
                         }
                     }
@@ -1217,7 +1252,7 @@ mod tests {
     // check that game state is in progress after initialisation
     #[test]
     fn game_in_progress_after_init() {
-        let game = Game::new();
+        let mut game = Game::new();
 
         println!("{game:?}");
 
@@ -1688,7 +1723,10 @@ mod tests {
         assert_eq!(1, game.colour_in_check_or_mate(true));
         assert_eq!(0, game.colour_in_check_or_mate(false));
         assert_eq!(game.get_game_state(), GameState::Check);
-        assert_eq!(Some(vec![String::from("F2")]), game.get_possible_moves("D3"));
+        assert_eq!(
+            Some(vec![String::from("F2")]),
+            game.get_possible_moves("D3")
+        );
         assert_eq!(true, game.make_move("D3", "F2"));
         assert_eq!(game.get_game_state(), GameState::InProgress);
 
@@ -1702,18 +1740,20 @@ mod tests {
         assert_eq!(true, game.make_move("G8", "H6"));
         assert_eq!(true, game.make_move("D7", "D8"));
         assert_eq!(game.get_game_state(), GameState::GameOver);
-        assert_eq!(game.get_board(), "rnbQ*k*r\nppp**ppp\n*******n\n********\n*b******\n********\nPPPP*NPP\nRNBQKB*R");
+        assert_eq!(
+            game.get_board(),
+            "rnbQ*k*r\nppp**ppp\n*******n\n********\n*b******\n********\nPPPP*NPP\nRNBQKB*R"
+        );
         //this shows promotion works. altough not yet shown game.set_promotion()
 
         //i'll simply show it in another function.
-        
     }
 
     #[test]
-    fn test_set_promotion(){
+    fn test_set_promotion() {
         let mut game = Game::new();
-        game.pieces = [0,0,0,0,0,0,];
-        game.colour_of_piece = [0,0];
+        game.pieces = [0, 0, 0, 0, 0, 0];
+        game.colour_of_piece = [0, 0];
         game.pieces[5] = 1 + 2_u64.pow(7); // ill just stuff em away in the corner. They are in A1 and A8 cuz 1 = 2.pow(0)
         game.colour_of_piece[0] = 1;
         game.colour_of_piece[1] = 2_u64.pow(7);
@@ -1721,7 +1761,7 @@ mod tests {
             format!("{game:?}"),
             "k*******\n********\n********\n********\n********\n********\n********\nK*******\n"
         );
-        
+
         game.pieces[0] = 2_u64.pow(62); //H7
         game.colour_of_piece[0] += 2_u64.pow(62);
         assert_eq!(
@@ -1736,7 +1776,30 @@ mod tests {
             "k******R\n********\n********\n********\n********\n********\n********\nK*******\n"
         );
         assert_eq!(1, game.colour_in_check_or_mate(false));
+    }
 
+    #[test]
+    fn test_bug() {
+        let mut game = Game::new();
+        assert_eq!(
+            game.get_board(),
+            "rnbqkbnr\npppppppp\n********\n********\n********\n********\nPPPPPPPP\nRNBQKBNR"
+        );
+        assert_eq!(true, game.make_move("E2", "E4"));
+        assert_eq!(true, game.make_move("F7", "F5"));
+        assert_eq!(true, game.make_move("D1", "E2"));
+        assert_eq!(true, game.make_move("G7", "G5"));
+        assert_eq!(true, game.make_move("E2", "H5"));
+        assert_eq!(2, game.colour_in_check_or_mate(false));
+        //assert_eq!(1, game.colour_in_check_or_mate(true));
+        // assert_eq!(1, game.colour_in_check_or_mate(false));
 
+        let white_check_or_mate = game.colour_in_check_or_mate(true);
+        let black_check_or_mate = game.colour_in_check_or_mate(false);
+        assert_eq!(
+            (white_check_or_mate == 2) | (black_check_or_mate == 2),
+            true
+        );
+        assert_eq!(game.get_game_state(), GameState::GameOver);
     }
 }

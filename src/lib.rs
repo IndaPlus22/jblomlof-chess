@@ -43,7 +43,7 @@ impl Game {
             /* initialise board, set active colour to white, ... */
             state: GameState::InProgress,
             white_turn: true,
-            en_passant_at: 0,
+            en_passant_at: 16,
             to_promote_to: 1,
             colour_of_piece: [
                 {
@@ -775,7 +775,7 @@ impl Game {
         _from_rank: u32,
     ) -> Vec<String> {
         let mut pawn_possible_moves: Vec<String> = vec![];
-        let mut new_rank: u32 = if _is_white {
+        let new_rank: u32 = if _is_white {
             _from_rank + 1
         } else {
             _from_rank - 1
@@ -819,24 +819,28 @@ impl Game {
                         }
                     }
                     if (if _is_white { 1 } else { 6 }) == _from_rank {
+                        let _temp_bit_pos = 2_u64.pow(new_file as u32 * 8 + new_rank);
+                        let _double_move_new_rank; 
                         if _is_white {
-                            new_rank += 1
+                            _double_move_new_rank = new_rank+ 1;
                         } else {
-                            new_rank -= 1
+                            _double_move_new_rank = new_rank - 1;
                         };
-                        _bit_pos = 2_u64.pow(new_file as u32 * 8 + new_rank);
-                        if (self.colour_of_piece[0] | self.colour_of_piece[1]) & _bit_pos
-                            != _bit_pos
+                        _bit_pos = 2_u64.pow(new_file as u32 * 8 + _double_move_new_rank);
+                        
+                        if ((self.colour_of_piece[0] | self.colour_of_piece[1]) & _bit_pos
+                            != _bit_pos) & ((self.colour_of_piece[0] | self.colour_of_piece[1]) & _bit_pos
+                            != _bit_pos)
                         {
                             if !self.would_cause_check(
                                 _is_white,
                                 _from_file,
                                 _from_rank,
                                 new_file as u32,
-                                new_rank,
+                                _double_move_new_rank,
                             ) {
                                 pawn_possible_moves
-                                    .push(self.transform_back(new_file as u32, new_rank));
+                                    .push(self.transform_back(new_file as u32, _double_move_new_rank));
                             }
                         }
                     }
